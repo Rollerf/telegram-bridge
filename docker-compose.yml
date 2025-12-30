@@ -1,0 +1,19 @@
+services:
+  telegram-bridge:
+    build: .
+    container_name: telegram-bridge
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - TG_API_ID
+      - TG_API_HASH
+      - TG_SESSION_PATH
+      - HTTP_PORT
+      - HTTP_TOKEN
+    ports:
+      - "3000:3000"
+    volumes:
+      - telegram-bridge-data:/data
+volumes:
+  telegram-bridge-data:

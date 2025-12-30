@@ -1,0 +1,21 @@
+{
+  "name": "telegram-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HTTP bridge to send Telegram MTProto messages via GramJS",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "bootstrap": "node dist/bootstrap.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "telegram": "^2.19.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.30",
+    "typescript": "^5.4.5"
+  }
+}
