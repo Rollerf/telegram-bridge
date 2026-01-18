@@ -2,7 +2,7 @@
 
 Small HTTP service that lets n8n (or any HTTP client) send Telegram messages as a user via MTProto (GramJS), because bots do not process messages from bots.
 
-## Setup
+## Docker (Compose)
 
 1) Copy the environment template and fill in your values:
 
@@ -71,7 +71,18 @@ curl -X POST http://<IP_OR_DOMAIN>:3000/send \
 kubectl apply -f k8s/telegram-bridge.secret.yaml -f k8s/telegram-bridge.yaml
 ```
 
-5) Bootstrap the MTProto session once in a pod that mounts the same PVC (e.g. `kubectl exec` or a temporary pod), then keep the deployment running.
+5) Bootstrap the MTProto session once in a pod that mounts the same PVC:
+
+```bash
+kubectl exec -it deploy/telegram-bridge -- node dist/bootstrap.js
+```
+
+If you already have a session file from docker-compose, you can copy it into the pod instead:
+
+```bash
+kubectl cp tg_user.session deploy/telegram-bridge:/data/tg_user.session
+kubectl rollout restart deploy/telegram-bridge
+```
 
 The liveness probe uses `/health/telegram` and will fail until the session exists.
 `k8s/telegram-bridge.secret.yaml` is gitignored to avoid committing secrets.
@@ -92,6 +103,15 @@ curl http://telegram-bridge.test/health
 
 Note: `.test` avoids the mDNS delays that `.local` can introduce.
 
+### Migration (docker-compose → k3s)
+
+For a step-by-step cutover and rollback plan, see `MIGRATION_K3S.md`. In short:
+
+- Build and publish the image.
+- Create the Secret from your `.env` values.
+- Apply the k8s manifests and bootstrap or migrate the session file.
+- Verify `/health`, `/health/telegram`, then switch clients and stop docker-compose.
+
 ### GitHub Container Registry (GHCR)
 
 Create a GitHub token with `read:packages` and `write:packages` (fine-grained tokens: Repository access to `Rollerf/telegram-bridge`, Repository permissions → Packages: Read and write).
@@ -107,6 +127,17 @@ Build and push:
 ```bash
 docker build -t ghcr.io/rollerf/telegram-bridge:<tag> .
 docker push ghcr.io/rollerf/telegram-bridge:<tag>
+```
+
+If the package is private, create a pull secret and attach it to the default service account:
+
+```bash
+kubectl create secret docker-registry ghcr-pull \
+  --docker-server=ghcr.io \
+  --docker-username=rollerf \
+  --docker-password=<GHCR_TOKEN> \
+  --docker-email=<EMAIL>
+kubectl patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr-pull"}]}'
 ```
 
 Then set the image in `k8s/telegram-bridge.yaml`:
