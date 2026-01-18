@@ -21,6 +21,14 @@ const sessionPath = process.env.TG_SESSION_PATH ?? "/data/tg_user.session";
 const portRaw = process.env.HTTP_PORT;
 const httpPort = portRaw ? Number(portRaw) : 3000;
 const httpToken = process.env.HTTP_TOKEN ?? "";
+const healthTelegramTtlMs = parsePositiveInt(
+  process.env.HEALTH_TELEGRAM_TTL_MS,
+  15000
+);
+const healthTelegramTimeoutMs = parsePositiveInt(
+  process.env.HEALTH_TELEGRAM_TIMEOUT_MS,
+  5000
+);
 
 if (!Number.isInteger(httpPort) || httpPort <= 0) {
   console.error("HTTP_PORT must be a positive integer.");
@@ -32,6 +40,21 @@ let client: TelegramClient | null = null;
 let connectPromise: Promise<void> | null = null;
 let authorized = false;
 let authError: Error | null = null;
+let lastTelegramHealthCheckAt = 0;
+let lastTelegramHealthCheckOk = false;
+let lastTelegramHealthCheckError: string | null = null;
+let lastTelegramHealthCheckLatencyMs: number | null = null;
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+}
 
 function loadSessionString(path: string): string {
   try {
@@ -108,6 +131,82 @@ async function ensureAuthorized(): Promise<void> {
   await connectPromise;
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return promise;
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("Telegram health check timed out."));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
+async function checkTelegramHealth(): Promise<{
+  ok: boolean;
+  error?: string;
+  latencyMs?: number;
+  cached: boolean;
+}> {
+  const now = Date.now();
+  if (
+    lastTelegramHealthCheckAt > 0 &&
+    now - lastTelegramHealthCheckAt < healthTelegramTtlMs
+  ) {
+    return {
+      ok: lastTelegramHealthCheckOk,
+      error: lastTelegramHealthCheckError ?? undefined,
+      latencyMs: lastTelegramHealthCheckLatencyMs ?? undefined,
+      cached: true,
+    };
+  }
+
+  const startedAt = Date.now();
+  let ok = false;
+  let error: string | null = null;
+
+  try {
+    await withTimeout(
+      (async () => {
+        await ensureAuthorized();
+        const tgClient = getClientOrThrow();
+        if (!tgClient.connected) {
+          await tgClient.connect();
+        }
+        await tgClient.getMe();
+      })(),
+      healthTelegramTimeoutMs
+    );
+    ok = true;
+  } catch (err) {
+    error = (err as Error).message;
+  }
+
+  lastTelegramHealthCheckAt = Date.now();
+  lastTelegramHealthCheckOk = ok;
+  lastTelegramHealthCheckError = error;
+  lastTelegramHealthCheckLatencyMs = Date.now() - startedAt;
+
+  return {
+    ok,
+    error: error ?? undefined,
+    latencyMs: lastTelegramHealthCheckLatencyMs ?? undefined,
+    cached: false,
+  };
+}
+
 function requireBearerToken(req: Request, res: Response, next: NextFunction): void {
   if (!httpToken) {
     next();
@@ -154,6 +253,25 @@ app.use(express.json({ limit: "128kb" }));
 
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true });
+});
+
+app.get("/health/telegram", async (_req: Request, res: Response) => {
+  const health = await checkTelegramHealth();
+  if (health.ok) {
+    res.json({
+      ok: true,
+      cached: health.cached,
+      latency_ms: health.latencyMs,
+    });
+    return;
+  }
+
+  res.status(503).json({
+    ok: false,
+    error: health.error ?? "Telegram health check failed.",
+    cached: health.cached,
+    latency_ms: health.latencyMs,
+  });
 });
 
 app.post("/send", requireBearerToken, async (req: Request, res: Response) => {

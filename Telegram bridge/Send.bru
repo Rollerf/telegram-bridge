@@ -1,0 +1,27 @@
+meta {
+  name: Send
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://localhost:3000/send
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "message": "/apagar_filas",
+    "chat_id": "@ControlLucesOficina_bot"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

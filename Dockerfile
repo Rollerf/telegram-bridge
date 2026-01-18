@@ -1,8 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM node:20-alpine AS build
 WORKDIR /app
-COPY package.json package.json
-COPY tsconfig.json tsconfig.json
+COPY package.json tsconfig.json ./
 RUN npm install
 COPY src ./src
 RUN npm run build
@@ -10,8 +9,10 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /app
 ENV NODE_ENV=production
-COPY package.json package.json
-RUN npm install --omit=dev
+COPY package.json ./
+RUN npm install --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
+RUN mkdir -p /data && chown -R node:node /app /data
+USER node
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

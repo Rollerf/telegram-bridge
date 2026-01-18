@@ -1,0 +1,23 @@
+meta {
+  name: Health telegram
+  type: http
+  seq: 4
+}
+
+get {
+  url: http://localhost:3000/health/telegram
+  body: none
+  auth: none
+}
+
+body:json {
+  {
+    "message": "/encender_filas",
+    "chat_id": "928716823"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
