@@ -5,16 +5,9 @@ meta {
 }
 
 get {
-  url: http://localhost:3000/health/telegram
+  url: http://telegram-bridge.test/health/telegram
   body: none
   auth: none
-}
-
-body:json {
-  {
-    "message": "/encender_filas",
-    "chat_id": "928716823"
-  }
 }
 
 settings {

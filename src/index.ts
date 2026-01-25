@@ -1,6 +1,6 @@
 import express, { NextFunction, Request, Response } from "express";
 import fs from "node:fs";
-import { TelegramClient } from "telegram";
+import { Api, TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 
 const apiIdRaw = process.env.TG_API_ID ?? "";
@@ -29,6 +29,9 @@ const healthTelegramTimeoutMs = parsePositiveInt(
   process.env.HEALTH_TELEGRAM_TIMEOUT_MS,
   5000
 );
+const healthTelegramChatId = (process.env.HEALTH_TELEGRAM_CHAT_ID ?? "").trim();
+const healthTelegramCommand =
+  (process.env.HEALTH_TELEGRAM_COMMAND ?? "").trim() || "/estado_luces";
 
 if (!Number.isInteger(httpPort) || httpPort <= 0) {
   console.error("HTTP_PORT must be a positive integer.");
@@ -154,6 +157,64 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isIncomingMessageAfter(message: unknown, sinceMs: number): boolean {
+  if (!(message instanceof Api.Message)) {
+    return false;
+  }
+
+  if (message.out) {
+    return false;
+  }
+
+  const messageMs = message.date ? message.date * 1000 : 0;
+  return messageMs >= sinceMs - 1000;
+}
+
+async function waitForTelegramResponse(
+  tgClient: TelegramClient,
+  entity: string | number,
+  sinceMs: number,
+  timeoutMs: number
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  const pollIntervalMs = 500;
+
+  while (Date.now() < deadline) {
+    const messages = await tgClient.getMessages(entity, { limit: 5 });
+    const response = messages.find((message) =>
+      isIncomingMessageAfter(message, sinceMs)
+    );
+    if (response) {
+      return;
+    }
+    await delay(pollIntervalMs);
+  }
+
+  throw new Error("Telegram health check did not receive a response.");
+}
+
+async function runTelegramHealthCheck(): Promise<void> {
+  await ensureAuthorized();
+  const tgClient = getClientOrThrow();
+  if (!tgClient.connected) {
+    await tgClient.connect();
+  }
+
+  if (!healthTelegramChatId) {
+    await tgClient.getMe();
+    return;
+  }
+
+  const entity = normalizeChatId(healthTelegramChatId);
+  const sentAt = Date.now();
+  await tgClient.sendMessage(entity, { message: healthTelegramCommand });
+  await waitForTelegramResponse(tgClient, entity, sentAt, healthTelegramTimeoutMs);
+}
+
 async function checkTelegramHealth(): Promise<{
   ok: boolean;
   error?: string;
@@ -178,17 +239,7 @@ async function checkTelegramHealth(): Promise<{
   let error: string | null = null;
 
   try {
-    await withTimeout(
-      (async () => {
-        await ensureAuthorized();
-        const tgClient = getClientOrThrow();
-        if (!tgClient.connected) {
-          await tgClient.connect();
-        }
-        await tgClient.getMe();
-      })(),
-      healthTelegramTimeoutMs
-    );
+    await withTimeout(runTelegramHealthCheck(), healthTelegramTimeoutMs);
     ok = true;
   } catch (err) {
     error = (err as Error).message;

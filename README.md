@@ -38,6 +38,10 @@ Telegram connectivity health check:
 curl http://<IP_OR_DOMAIN>:3000/health/telegram
 ```
 
+If `HEALTH_TELEGRAM_CHAT_ID` is set, `/health/telegram` sends
+`HEALTH_TELEGRAM_COMMAND` (default `/estado_luces`) to that chat and waits for a
+response within `HEALTH_TELEGRAM_TIMEOUT_MS`.
+
 Send a message:
 
 ```bash

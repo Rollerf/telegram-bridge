@@ -5,7 +5,7 @@ meta {
 }
 
 post {
-  url: http://localhost:3000/send
+  url: http://telegram-bridge.test/send
   body: json
   auth: bearer
 }
@@ -16,8 +16,8 @@ auth:bearer {
 
 body:json {
   {
-    "message": "/apagar_filas",
-    "chat_id": "@ControlLucesOficina_bot"
+    "message": "/estado_luces",
+    "chat_id": {{chat_id}}
   }
 }
 
