@@ -91,6 +91,18 @@ kubectl rollout restart deploy/telegram-bridge
 The liveness probe uses `/health/telegram` and will fail until the session exists.
 `k8s/telegram-bridge.secret.yaml` is gitignored to avoid committing secrets.
 
+To delete the service and related resources:
+
+```bash
+kubectl delete -f k8s/telegram-bridge.yaml -f k8s/telegram-bridge.secret.yaml
+```
+
+If you also want to remove the persisted session data:
+
+```bash
+kubectl delete pvc telegram-bridge-data
+```
+
 ### Ingress (Traefik)
 
 The manifest includes an Ingress for Traefik with host `telegram-bridge.test`. Add a hosts entry that points to your node IP:
